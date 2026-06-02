@@ -1,0 +1,425 @@
+# KoreBank Database: Data Dictionary
+
+## 1. Document overview
+
+KoreBank is a fictional commercial bank in Nigeria. This data dictionary describes the structure of the KoreBank database, a sample retail and commercial banking schema modelled on a Nigerian commercial bank. It documents every schema, table, column, relationship and constraint that binds them together.
+
+**Conventions used in this document**
+
+- PK = Primary Key, FK = Foreign Key, UQ = Unique constraint.
+- Null = Yes means the column accepts NULL; No means NOT NULL is enforced.
+
+## 2. Schema overview
+
+The database is divided into seven logical schemas. Each schema groups closely related tables and represents a distinct domain of the bank's operations.
+
+| Schema | Purpose |
+|--------|---------|
+| Product | Catalogue of bankable products (account products, loan types, loan products). |
+| Org | Organisational data: locations, branches, and employees with supervisor hierarchy. |
+| Core | Core banking entities: customers, next of kin, accounts, signatories, and fixed deposits. |
+| TransOperation | Transaction processing: channels, rails, banks, transactions, and beneficiaries. |
+| Credit | Credit lifecycle: loan applications (pipeline), booked loans, and collateral. |
+| Channel | Customer facing channels: the Card sub-domain. |
+| Audit | System wide audit log capturing INSERT, UPDATE and DELETE actions by employees. |
+
+## 3. Table definitions
+
+### 3.1 Product schema
+
+Catalogue of saleable products. Account products and loan products are kept here so that operational tables (Account, Loan) can reference a single source of truth.
+
+**Product.AccountProduct** — catalogue of deposit products available to customers
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| AccountProductID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for each account product. |
+| ProductCode | CHAR(3) | No | UQ | | Three-character business code uniquely identifying the product (e.g. 'SAV', 'CUR'). |
+| accountName | VARCHAR(100) | No | UQ | | Marketing name of the account product (e.g. 'KoreSave Plus'). |
+| AccountType | VARCHAR(100) | No | | | High-level account category. Allowed: Savings, Current, Domiciliary, FixedDeposit. |
+| DateCreated | DATETIME | No | | GETDATE() | Timestamp the product was registered in the catalogue. |
+| IsActive | BIT | No | | 1 | Flag indicating whether the product is currently offered to customers. |
+| EffectiveTo | DATE | Yes | | NULL | Date on which the product is/was withdrawn from sale; NULL if open ended. |
+
+**Product.LoanType** — top-level loan categories
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| LoanTypeID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the loan type. |
+| LoanTypeName | VARCHAR(100) | Yes | UQ | | Loan category name (e.g. Personal, Mortgage, SME, Agricultural, Auto, Overdraft, Syndicated). |
+
+**Product.LoanProduct** — specific loan products linked to a loan type
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| LoanProductID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for each loan product. |
+| LoanCode | CHAR(3) | No | UQ | | Three-character business code uniquely identifying the loan product. |
+| LoanName | VARCHAR(100) | No | | | Marketing name of the loan product. |
+| LoanTypeID | INT | No | FK | | Reference to Product.LoanType: the category this product belongs to. |
+| DateCreated | DATETIME | No | | GETDATE() | Timestamp the loan product was registered. |
+| IsActive | BIT | No | | 1 | Indicates whether the product is currently offered. |
+| EffectiveTo | DATE | Yes | | NULL | Withdrawal date; NULL if still active. |
+
+### 3.2 Org schema
+
+Organisational structure: locations are physical addresses, branches operate at a location and are run by an employee, and employees report through a self referencing supervisor chain.
+
+**Org.Location** — physical addresses used by branches
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| LocationID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the physical location. |
+| Address | VARCHAR(250) | No | | | Street address of the branch location. |
+| City | VARCHAR(100) | Yes | | | City the location is in. |
+| State | VARCHAR(100) | Yes | | | State / region the location is in. |
+
+**Org.Branch** — operating branches of the bank
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| BranchID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the branch. |
+| BranchName | VARCHAR(100) | No | UQ | | Unique name of the branch (e.g. 'Victoria Island Branch'). |
+| LocationID | INT | No | FK | | Reference to Org.Location: the physical address of the branch. |
+| PhoneNumber | VARCHAR(11) | No | UQ | | Branch contact telephone (Nigerian 11-digit format). |
+| ManagerID | INT | Yes | FK | NULL | References EmployeeID in Org.Employee: the branch manager. Nullable to support a branch with no assigned manager and to break the circular dependency at creation time. |
+| IsActive | BIT | No | | 1 | Flag indicating whether the branch is operational. |
+| CreatedAt | DATETIME | No | | GETDATE() | Timestamp the branch record was created. |
+
+**Org.Employee** — bank staff with supervisor hierarchy
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| EmployeeID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the employee. |
+| FirstName | VARCHAR(100) | No | | | Employee's given name. |
+| LastName | VARCHAR(100) | No | | | Employee's surname. |
+| Email | VARCHAR(150) | No | UQ | | Corporate email address; unique across the workforce. |
+| PhoneNumber | VARCHAR(20) | Yes | | NULL | Contact phone number. |
+| DateOfBirth | DATE | No | | | Date of birth, used for HR and statutory reporting. |
+| Role | VARCHAR(50) | No | | | Functional job title (e.g. Teller, Account Officer, Relationship Manager). |
+| Level | VARCHAR(100) | No | | | Grade band (e.g. Banking Officer, Assistant Banking Officer). |
+| Salary | DECIMAL(15,2) | No | | | Gross salary as defined by HR policy. |
+| BranchID | INT | No | FK | | Reference to Org.Branch: the branch the employee is posted to. |
+| SupervisorID | INT | Yes | FK | NULL | Self reference to EmployeeID: the line manager. NULL for top of hierarchy roles. |
+| HireDate | DATE | No | | | Date the employee joined the bank. |
+| IsActive | BIT | No | | 1 | Indicates whether the employee is currently in service. |
+| ExitDate | DATE | Yes | | | Date the employee exited the bank. |
+
+### 3.3 Core schema
+
+Core banking entities: customer master data, next of kin records, the account master, account signatories, and fixed deposits booked against accounts.
+
+**Core.Customer** — customer master record (Individual, SME, Corporate)
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| CustomerID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the customer. |
+| FirstName | VARCHAR(100) | No | | | Customer's given name (or first registered name for SME/Corporate). |
+| LastName | VARCHAR(100) | No | | | Customer's surname (or second registered name for SME/Corporate). |
+| IDType | VARCHAR(100) | No | | | Government issued ID type. Allowed: Driving Licence, NIN, International Passport, Voters Card, CAC documents. |
+| IDNumber | VARCHAR(20) | No | UQ | | ID number on the ID card; unique across customers. |
+| TIN | VARCHAR(10) | Yes | UQ | NULL | Tax Identification Number; unique when supplied. |
+| BVN | VARCHAR(11) | No | UQ | | Bank Verification Number: 11-digit CBN mandated identifier. |
+| DateOfBirth | DATE | Yes | | NULL | Date of birth (or date of incorporation for corporate customers). |
+| Email | VARCHAR(150) | No | UQ | | Primary email address; unique across customers. |
+| PhoneNumber | VARCHAR(11) | No | | | Primary mobile number (Nigerian 11-digit format). |
+| Address | VARCHAR(255) | No | | | Residential or registered office address. |
+| City | VARCHAR(100) | No | | | City of residence / registration. |
+| State | VARCHAR(100) | No | | | State of residence / registration. |
+| Occupation | VARCHAR(200) | No | | | Customer's occupation or, for corporate, line of business. |
+| CustomerType | VARCHAR(20) | No | | | Customer segment. Allowed: Individual, SME, Corporate. |
+| KYCStatus | VARCHAR(20) | No | | | Know Your Customer state. Allowed: Pending, Verified, Rejected, Suspended. |
+| CreatedAt | DATETIME | No | | GETDATE() | Timestamp the customer record was created. |
+| UpdatedAt | DATETIME | No | | GETDATE() | Timestamp the customer record was last updated. |
+
+**Core.NextOfKin** — single next of kin per customer
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| NextOfKinID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the next of kin record. |
+| CustomerID | INT | No | FK, UQ | | Reference to Core.Customer. UNIQUE: each customer has exactly one next of kin. |
+| FirstName | VARCHAR(200) | No | | | Next of kin's given name. |
+| LastName | VARCHAR(200) | No | | | Next of kin's surname. |
+| Relationship | VARCHAR(50) | No | | | Relationship to the customer (e.g. Spouse, Parent, Sibling). |
+| Email | VARCHAR(150) | Yes | | NULL | Email contact of next of kin. |
+| PhoneNumber | VARCHAR(20) | No | | | Phone number of next of kin. |
+
+**Core.Account** — all deposit, current and fixed deposit accounts
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| AccountID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the account. |
+| AccountNumber | VARCHAR(10) | No | UQ | | 10-digit NUBAN account number; the natural key referenced by transactions, cards and loans. |
+| CustomerID | INT | No | FK | | Reference to Core.Customer: the account holder. |
+| AccountOfficerID | INT | No | FK | | References EmployeeID in Org.Employee: the assigned relationship/account officer. |
+| ProductID | INT | No | FK | | Reference to Product.AccountProduct: the product the account was opened against. |
+| Balance | DECIMAL(18,2) | No | | 0.00 | Current ledger balance in the account currency. |
+| Currency | CHAR(3) | No | | 'NGN' | ISO 4217 currency code of the account. |
+| Status | VARCHAR(10) | No | | | Operational status. Allowed: Active, Dormant, Frozen, Closed. |
+| ProfitCenter | INT | No | FK | | References BranchID in Org.Branch: the branch credited as profit centre for the account. |
+| OpenedAt | DATETIME | No | | GETDATE() | Timestamp the account was opened. |
+| ClosedAt | DATETIME | Yes | | NULL | Timestamp the account was closed; NULL while open. |
+
+**Core.AccountSignatory** — authorised signatories on an account
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| SignatoryID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the signatory record. |
+| AccountNumber | VARCHAR(10) | No | FK | | References AccountNumber in Core.Account: the account the signatory can operate. |
+| SignatoryName | VARCHAR(200) | No | | | Full name of the signatory. |
+| IDType | VARCHAR(100) | No | | | Allowed: Driving Licence, NIN, International Passport, Voters Card. |
+| IDNumber | VARCHAR(20) | No | | | ID number on the ID type. |
+| BVN | VARCHAR(11) | No | | | Bank Verification Number of the signatory. |
+| DateOfBirth | DATE | No | | | Signatory's date of birth. |
+| Email | VARCHAR(150) | No | | | Signatory's email address. |
+| PhoneNumber | VARCHAR(11) | No | | | Signatory's mobile number. |
+| Address | VARCHAR(255) | No | | | Signatory's residential address. |
+| City | VARCHAR(100) | No | | | City of residence. |
+| State | VARCHAR(100) | No | | | State of residence. |
+| Occupation | VARCHAR(200) | No | | | Occupation of the signatory. |
+| IsVerified | BIT | No | | 0 | Whether the signatory's documents have been verified. |
+| AddedAt | DATETIME | No | | GETDATE() | Timestamp the signatory was added to the account. |
+
+**Core.FixedDeposit** — fixed tenor interest bearing deposits
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| FixedDepositID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the fixed deposit. |
+| AccountID | INT | No | FK | | Reference to Core.Account: the account the deposit is booked under. |
+| DepositAmount | DECIMAL(18,2) | No | | | Principal amount placed on deposit. Must be greater than zero. |
+| InterestRate | DECIMAL(6,4) | No | | | Annualised interest rate (e.g. 0.1500 = 15%). |
+| TenorDays | INT | No | | | Tenor of the deposit, in days. |
+| StartDate | DATETIME | No | | | Date and time the deposit commenced earning interest. |
+| MaturityDate | DATE | No | | | Date the deposit matures. Constraint enforces MaturityDate > StartDate. |
+| MaturityAmount | DECIMAL(18,2) | No | | | Principal plus accrued interest payable at maturity. |
+| Status | VARCHAR(15) | No | | 'Active' | Allowed: Active, Matured, Broken, Rolled-Over. |
+| AutoRollover | BIT | No | | 0 | If 1, the deposit auto-rolls into a new tenor on maturity. |
+| CreatedAt | DATETIME | No | | GETDATE() | Timestamp the deposit was booked. |
+
+### 3.4 TransOperation schema
+
+Transaction processing domain. Channels, rails and external banks are reference data; Transaction is the central postings table; Beneficiary captures saved third-party accounts for outward transfers.
+
+**TransOperation.TransactionChannel** — channels through which transactions originate
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| ChannelCode | VARCHAR(10) | No | PK | | Short code for the channel (e.g. 'ATM', 'POS', 'MOBILE'). |
+| ChannelName | VARCHAR(50) | No | UQ | | Channel name (e.g. Mobile App, ATM, Internet Banking, POS). |
+
+**TransOperation.PaymentRail** — rails used to settle transactions
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| RailCode | VARCHAR(10) | No | PK | | Short code for the payment rail (e.g. 'NIP', 'NEFT', 'RTGS', 'INT'). |
+| RailName | VARCHAR(50) | No | UQ | | Rail name (e.g. NIP, NEFT, RTGS, Internal Ledger Transfer). |
+
+**TransOperation.Bank** — external banks identified by CBN bank code
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| BankCode | CHAR(3) | No | PK | | CBN issued 3-character bank code. |
+| BankName | VARCHAR(100) | No | UQ | | Registered name of the bank. |
+
+**TransOperation.Transaction** — individual ledger postings against accounts
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| TransactionID | BIGINT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the transaction. |
+| TransactionRef | VARCHAR(18) | No | UQ | | Bank issued unique transaction reference, used for tracing and reversals. |
+| AccountNumber | VARCHAR(10) | No | FK | | Reference to Core.Account.AccountNumber: the account being debited or credited. |
+| DRCR | VARCHAR(10) | No | | | Direction of the entry. Allowed: DR (debit), CR (credit). |
+| TransactionType | VARCHAR(30) | No | | | Allowed: lodgement, Withdrawal, Transfer, LoanDisbursement, LoanRepayment, FeeCharge, InterestCredit, Reversal. |
+| Amount | DECIMAL(18,2) | No | | | Transaction amount in the transaction currency. |
+| Currency | CHAR(3) | No | | 'NGN' | ISO 4217 currency of the transaction. |
+| ExchangeRate | DECIMAL(10,6) | Yes | | 1.00 | FX rate used to translate to base currency where applicable. |
+| Description | VARCHAR(255) | Yes | | NULL | Free text narration / posting description. |
+| InstrumentID | VARCHAR(18) | Yes | | NULL | Cheque number or other payment instrument identifier when relevant. |
+| ChannelCode | VARCHAR(10) | No | FK | | Reference to TransOperation.TransactionChannel: the originating channel. |
+| RailCode | VARCHAR(10) | No | FK | | Reference to TransOperation.PaymentRail: the rail used to settle the transaction. |
+| Status | VARCHAR(15) | No | | | Allowed: Pending, Completed, Failed, Reversed. |
+| RunningBalance | DECIMAL(18,2) | No | | | Account ledger balance after this entry has been posted. |
+| ProcessedByID | INT | Yes | FK | NULL | Reference to Org.Employee. Initiator/processor (e.g. teller). NULL for system / channel driven transactions. |
+| AuthorisedByID | INT | Yes | FK | NULL | Reference to Org.Employee. The authoriser, where dual control applies. |
+| TransactionDate | DATETIME | No | | GETDATE() | Timestamp the transaction was posted. |
+| ValueDate | DATE | No | | CAST(GETDATE() AS DATE) | Effective value date for interest / float calculations. |
+| BeneficiaryID | INT | Yes | FK | NULL | Reference to TransOperation.Beneficiary. Populated for outward transfers. |
+
+**TransOperation.Beneficiary** — saved beneficiaries for outward transfers
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| BeneficiaryID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the beneficiary record. |
+| BeneficiaryName | VARCHAR(200) | No | | | Beneficiary's full name as registered with the destination bank. |
+| AccountNumber | VARCHAR(20) | No | | | Beneficiary's account number at the destination bank. |
+| BankCode | CHAR(3) | No | FK | | Reference to TransOperation.Bank: destination bank. |
+| IsVerified | BIT | No | | 0 | Whether name enquiry verification has been performed for this beneficiary. |
+| AddedAt | DATETIME | No | | GETDATE() | Timestamp the beneficiary was added. |
+
+### 3.5 Credit schema
+
+Loan lifecycle. A loanPipeline record is created at application time and progresses through review and approval. Once approved, a corresponding Loan (booking) row is created. Collateral is captured against the booking.
+
+**Credit.loanPipeline** — loan applications under review / decision
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| LoanID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the loan application in the pipeline. |
+| CustomerID | INT | No | FK | | Reference to Core.Customer: the applicant. |
+| LoanProductID | INT | No | FK | | Reference to Product.LoanProduct: the product applied for. |
+| StartDate | DATETIME | No | | | Requested commencement date of the loan. |
+| PrincipalAmount | DECIMAL(18,2) | No | | | Principal requested by the customer. Must be greater than zero. |
+| TenorMonth | INT | No | | | Requested tenor expressed in months. |
+| InterestRate | DECIMAL(6,4) | No | | | Quoted annual interest rate (e.g. 0.1800 = 18%). Must be > 0 and < 1. |
+| Moratorium | INT | Yes | | 0 | Number of months of repayment moratorium granted. |
+| RepaymentSchedule | VARCHAR(200) | No | | Monthly | Repayment frequency / structure (e.g. Monthly, Bullet Payment). |
+| Status | VARCHAR(15) | No | | | Pipeline state (e.g. Approved, Rejected, Under Review). |
+| ReviewedByID | INT | No | FK | | References EmployeeID in Org.Employee: credit officer who reviewed the application. |
+| ApprovedByID | INT | No | FK | | References EmployeeID in Org.Employee: credit approver. |
+| ApprovedDate | DATETIME | No | | | Timestamp the application was approved or declined. |
+
+**Credit.Loan** — booked (disbursed) loans linked to an account
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| BookingID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the booked (disbursed) loan. |
+| LoanID | INT | No | FK, UQ | | Reference to Credit.loanPipeline. UNIQUE: exactly one booking per approved application. |
+| AccountNumber | VARCHAR(10) | No | FK | | Reference to Core.Account.AccountNumber: disbursement and repayment account. |
+| PrincipalAmountApproved | DECIMAL(18,2) | No | | | Principal actually approved and disbursed. Must be > 0. |
+| TenorMonthApproved | INT | No | | | Final approved tenor, in months. |
+| InterestRateApproved | DECIMAL(6,4) | No | | | Final approved annual rate. Must be > 0 and < 1. |
+| MoratoriumApproved | INT | Yes | | 0 | Final approved moratorium period (months). |
+| RepaymentScheduleApproved | VARCHAR(200) | No | | 'Monthly' | Final agreed repayment schedule. |
+| Status | VARCHAR(15) | No | | | Allowed: Active, Paid, Defaulted, Written-Off. |
+| DisbursementDate | DATE | No | | GETDATE() | Date funds were credited to the customer. |
+| MaturityDate | DATE | No | | | Contractual maturity date of the facility. |
+| CreatedByID | INT | No | FK | | References EmployeeID in Org.Employee: credit operator who initiated the loan booking. |
+| AuthorisedByID | INT | No | FK | | References EmployeeID in Org.Employee: credit operator who authorised the loan booking. |
+
+**Credit.Collateral** — security pledged against a booked loan
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| CollateralID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the collateral record. |
+| BookingID | INT | No | FK | | Reference to Credit.Loan: the loan booking this collateral secures. |
+| CollateralType | VARCHAR(30) | No | | | Type of security (e.g. Mortgage, Vehicle, Equipment, Stock/Shares, Personal Guarantee, Fixed Deposit). |
+| Description | VARCHAR(500) | No | | | Detailed description of the security item. |
+| IsPerfected | BIT | No | | | Indicates whether legal perfection of the security has been completed. |
+| PerfectionDate | DATE | Yes | | NULL | Date legal perfection was completed; NULL if not yet perfected. |
+| BookValue | DECIMAL(18,2) | No | | | Open market book value at valuation. Must be > 0. |
+| ForceSaleValue | DECIMAL(18,2) | No | | | Forced sale (distressed) value used for impairment cover. Must be > 0. |
+| ValuationDate | DATE | No | | | Date the most recent valuation was performed. |
+| Valuer | VARCHAR(250) | No | | | Name of the firm or professional that performed the valuation. |
+| IsReleased | BIT | No | | 0 | Indicates whether the security has been released back to the customer. |
+
+### 3.6 Channel schema
+
+The Card table covers debit, credit and prepaid plastic linked to accounts.
+
+**Channel.Card** — cards issued against an account
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| CardID | INT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the card. |
+| AccountID | INT | No | FK | | Reference to Core.Account: the account the card is linked to. |
+| CardNumber | VARCHAR(64) | No | UQ | | Tokenised or masked PAN; never stored in plain text. |
+| CardType | VARCHAR(10) | No | | | Allowed: Debit, Credit, Prepaid. |
+| CardScheme | VARCHAR(15) | No | | 'Verve' | Allowed: Visa, Mastercard, Verve. |
+| IssuedAt | DATETIME | No | | GETDATE() | Date and time the card was issued. |
+| ExpiryDate | DATE | No | | | Card expiry date. Must be after IssuedAt. |
+| CVVHash | VARCHAR(64) | Yes | | NULL | Hash of the card verification value; never stored in plain text. |
+| PINHash | VARCHAR(64) | Yes | | NULL | Hash of the customer set PIN; never stored in plain text. |
+| DailyLimit | DECIMAL(15,2) | No | | 100000.00 | Daily transaction limit on the card. Must be > 0. |
+| Status | VARCHAR(10) | No | | 'Active' | Allowed: Active, Blocked, Expired, Lost. |
+
+### 3.7 Audit schema
+
+System wide audit log. Every INSERT, UPDATE and DELETE in security relevant tables is expected to write a row here, capturing the actor, the affected row, before and after snapshots and the originating IP address.
+
+**Audit.AuditLog** — append only log of changes to tracked tables
+
+| Column | Data Type | Null | Key | Default | Description |
+|--------|-----------|------|-----|---------|-------------|
+| LogID | BIGINT IDENTITY | No | PK | Auto-increment | Surrogate primary key for the audit entry. |
+| EmployeeID | INT | No | FK | | Reference to Org.Employee: the user that performed the action. |
+| TableName | VARCHAR(100) | No | | | Name of the table the change was made on (schema qualified or plain). |
+| RecordID | VARCHAR(50) | No | | | Primary key value of the affected row, stored as a string for cross-type support. |
+| ActionType | VARCHAR(10) | No | | | Allowed: INSERT, UPDATE, DELETE. |
+| OldValues | NVARCHAR(MAX) | No | | | Snapshot of the row before the change (typically JSON). |
+| NewValues | NVARCHAR(MAX) | No | | | Snapshot of the row after the change (typically JSON). |
+| IPAddress | VARCHAR(45) | No | | | IPv4 or IPv6 address from which the action was performed. |
+| ActionDate | DATETIME | No | | GETDATE() | Timestamp the action was logged. |
+
+## 4. Relationships and foreign keys
+
+The following table lists every foreign key relationship in the database.
+
+| Constraint | Child Table.Column | Parent Table.Column | Notes |
+|------------|--------------------|--------------------|-------|
+| LoanProduct_Type | Product.LoanProduct.LoanTypeID | Product.LoanType.LoanTypeID | Each loan product belongs to one loan type. |
+| Branch_Location | Org.Branch.LocationID | Org.Location.LocationID | Branch sits at one location. |
+| FK_Branch_Manager | Org.Branch.ManagerID | Org.Employee.EmployeeID | Branch manager is an employee. Nullable to break circular dependency. |
+| FK_Employee_Branch | Org.Employee.BranchID | Org.Branch.BranchID | Employee is posted to one branch. |
+| FK_Employee_Supervisor | Org.Employee.SupervisorID | Org.Employee.EmployeeID | Self reference: line manager hierarchy. |
+| FK_NextOfKin_Customer | Core.NextOfKin.CustomerID | Core.Customer.CustomerID | One to one (UNIQUE on CustomerID). |
+| FK_Account_Customer | Core.Account.CustomerID | Core.Customer.CustomerID | Customer can have many accounts. |
+| FK_Account_Employee | Core.Account.AccountOfficerID | Org.Employee.EmployeeID | Each account has one assigned officer. |
+| FK_Account_Branch | Core.Account.ProfitCenter | Org.Branch.BranchID | Profit centre branch for the account. |
+| FK_Account_Product | Core.Account.ProductID | Product.AccountProduct.AccountProductID | An account is opened under one product. |
+| Signatory_Account | Core.AccountSignatory.AccountNumber | Core.Account.AccountNumber | Many signatories per account. |
+| FK_FD_Account | Core.FixedDeposit.AccountID | Core.Account.AccountID | Each fixed deposit is booked on one account. |
+| FK_Transaction_Account | TransOperation.Transaction.AccountNumber | Core.Account.AccountNumber | Every transaction posts to one account. |
+| FK_Transaction_ProcessedBy | TransOperation.Transaction.ProcessedByID | Org.Employee.EmployeeID | Nullable for system driven entries. |
+| FK_Transaction_AuthorisedBy | TransOperation.Transaction.AuthorisedByID | Org.Employee.EmployeeID | Checker / authoriser, where applicable. |
+| FK_Transaction_TransactionChannel | TransOperation.Transaction.ChannelCode | TransOperation.TransactionChannel.ChannelCode | Originating channel. |
+| FK_Transaction_PaymentRail | TransOperation.Transaction.RailCode | TransOperation.PaymentRail.RailCode | Settlement rail. |
+| FK_Trans_Ben | TransOperation.Transaction.BeneficiaryID | TransOperation.Beneficiary.BeneficiaryID | Outward payment beneficiary; nullable for transactions like ATM withdrawal. |
+| FK_Beneficiary_Bank | TransOperation.Beneficiary.BankCode | TransOperation.Bank.BankCode | Destination bank for the beneficiary. |
+| FK_Loan_Customer | Credit.loanPipeline.CustomerID | Core.Customer.CustomerID | Loan applicant. |
+| FK_Loan_loanProduct | Credit.loanPipeline.LoanProductID | Product.LoanProduct.LoanProductID | Product applied for. |
+| FK_Loan_ReviewedBy | Credit.loanPipeline.ReviewedByID | Org.Employee.EmployeeID | Credit officer who reviewed. |
+| FK_Loan_ApprovedBy | Credit.loanPipeline.ApprovedByID | Org.Employee.EmployeeID | Credit approver. |
+| FK_Loan_LoanPipeline | Credit.Loan.LoanID | Credit.loanPipeline.LoanID | One to one booking of an approved application. |
+| FK_Loan_Account | Credit.Loan.AccountNumber | Core.Account.AccountNumber | Disbursement / repayment account. |
+| FK_Loan_CreatedBy | Credit.Loan.CreatedByID | Org.Employee.EmployeeID | Booking maker. |
+| FK_Loan_AuthorisedBy | Credit.Loan.AuthorisedByID | Org.Employee.EmployeeID | Booking checker / authoriser. |
+| FK_Card_Account | Channel.Card.AccountID | Core.Account.AccountID | Each card is linked to one account. |
+| FK_AuditLog_Employee | Audit.AuditLog.EmployeeID | Org.Employee.EmployeeID | User that performed the audited action. |
+
+## 5. Constraints summary
+
+### 5.1 Check constraints (allowed values)
+
+| Column | Allowed values |
+|--------|----------------|
+| Product.AccountProduct.AccountType | Savings, Current, Domiciliary, FixedDeposit |
+| Core.Customer.IDType | Driving Licence, NIN, International Passport, Voters Card, CAC documents |
+| Core.Customer.CustomerType | Individual, SME, Corporate |
+| Core.Customer.KYCStatus | Pending, Verified, Rejected, Suspended |
+| Core.AccountSignatory.IDType | Driving Licence, NIN, International Passport, Voters Card |
+| Core.Account.Status | Active, Dormant, Frozen, Closed |
+| Core.FixedDeposit.Status | Active, Matured, Broken, Rolled-Over |
+| TransOperation.Transaction.DRCR | DR, CR |
+| TransOperation.Transaction.TransactionType | lodgement, Withdrawal, Transfer, LoanDisbursement, LoanRepayment, FeeCharge, InterestCredit, Reversal |
+| TransOperation.Transaction.Status | Pending, Completed, Failed, Reversed |
+| Credit.Loan.Status | Active, Paid, Defaulted, Written-Off |
+| Channel.Card.CardType | Debit, Credit, Prepaid |
+| Channel.Card.CardScheme | Visa, Mastercard, Verve |
+| Channel.Card.Status | Active, Blocked, Expired, Lost |
+| Audit.AuditLog.ActionType | INSERT, UPDATE, DELETE |
+
+### 5.2 Range / business rule check constraints
+
+| Table / Column | Constraint | Notes |
+|----------------|------------|-------|
+| Core.FixedDeposit | MaturityDate > CAST(StartDate AS DATE) | Maturity must follow start. |
+| Core.FixedDeposit.DepositAmount | DepositAmount > 0 | Principal must be positive. |
+| Credit.loanPipeline.PrincipalAmount | PrincipalAmount > 0 | Requested principal must be positive. |
+| Credit.loanPipeline.InterestRate | InterestRate > 0 AND InterestRate < 1 | Annual rate held as a fraction. |
+| Credit.loanPipeline | ReviewedByID <> ApprovedByID | Separation of duties: reviewer and approver differ. |
+| Credit.Loan.PrincipalAmountApproved | PrincipalAmountApproved > 0 | Approved principal must be positive. |
+| Credit.Loan.InterestRateApproved | InterestRateApproved > 0 AND < 1 | Annual rate held as a fraction. |
+| Credit.Loan | CreatedByID <> AuthorisedByID | Separation of duties: maker and checker differ. |
+| Credit.Collateral.BookValue | BookValue > 0 | Book value must be positive. |
+| Credit.Collateral.ForceSaleValue | ForceSaleValue > 0 | Forced sale value must be positive. |
+| Channel.Card.DailyLimit | DailyLimit > 0 | Daily limit must be positive. |
+| Channel.Card | ExpiryDate > CAST(IssuedAt AS DATE) | Card must expire after issuance. |
