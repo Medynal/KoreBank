@@ -34,7 +34,7 @@ The database is organised into seven schemas, each owning one domain:
 ## Design decisions
 
 A few choices worth noting:
-- **Country Finanacial ecosystem:** This Database was built base on the Nigeria Banking ecosystem and infrastructure, accounting for the information in 'TransOperation.PaymentRail' table
+- **Country Finanacial ecosystem:** This Database was built base on the Nigeria Banking ecosystem and infrastructure, accounting for the information in `TransOperation.PaymentRail` table
 - **Pipeline separated from booking:**: Loan applications live in `Credit.loanPipeline`; only approved applications should be booked into `Credit.Loan`. Holding the two apart makes it possible to detect loans booked without approval.
 - **Separation of duties:** `CHECK` constraints enforce that the reviewer and approver of a loan differ (`ReviewedByID <> ApprovedByID`), and that the person who books a loan and the person who authorises it differ (`CreatedByID <> AuthorisedByID`).
 - **Self referencing staff hierarchy:** `Org.Employee.SupervisorID` references the same table, modelling reporting lines.
