@@ -68,14 +68,12 @@ The script builds the `KoreBank` database from scratch, so drop any existing cop
 
 ## Repository structure
 
-```
 korebank-sql-database/
 ├── README.md
 ├── korebank.sql            full schema, sample data and queries
 ├── erd/
-│   └── korebank-erd.png    entity relationship diagram
+│   └── ERD KORE BANK-Page-2.drawio    entity relationship diagram
 └── data-dictionary.md      documentation of every table and its fields
-```
 
 ## Built with
 
