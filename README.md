@@ -34,13 +34,13 @@ The database is organised into seven schemas, each owning one domain:
 ## Design decisions
 
 A few choices worth noting:
-
-- **Pipeline separated from booking.** Loan applications live in `Credit.loanPipeline`; only approved applications should be booked into `Credit.Loan`. Holding the two apart makes it possible to detect loans booked without approval.
-- **Separation of duties.** `CHECK` constraints enforce that the reviewer and approver of a loan differ (`ReviewedByID <> ApprovedByID`), and that the person who books a loan and the person who authorises it differ (`CreatedByID <> AuthorisedByID`).
-- **Self referencing staff hierarchy.** `Org.Employee.SupervisorID` references the same table, modelling reporting lines.
-- **Deferred foreign keys.** `Org.Branch.ManagerID` and `TransOperation.Transaction.BeneficiaryID` are added after their target tables exist, resolving the circular dependency between branches, employees and beneficiaries.
-- **Domain integrity.** `CHECK` constraints restrict the permitted values for account types, KYC status, transaction types, card schemes and similar fields. Sensitive card data (CVV, PIN) is stored only as a hash placeholder, never in plain text.
-- **Audit trail.** `Audit.AuditLog` records inserts, updates and deletes alongside the old and new values.
+- **Country Finanacial ecosystem:** This Database was built base on the Nigeria Banking ecosystem and infrastructure, accounting for the information in 'TransOperation.PaymentRail' table
+- **Pipeline separated from booking:**: Loan applications live in `Credit.loanPipeline`; only approved applications should be booked into `Credit.Loan`. Holding the two apart makes it possible to detect loans booked without approval.
+- **Separation of duties:** `CHECK` constraints enforce that the reviewer and approver of a loan differ (`ReviewedByID <> ApprovedByID`), and that the person who books a loan and the person who authorises it differ (`CreatedByID <> AuthorisedByID`).
+- **Self referencing staff hierarchy:** `Org.Employee.SupervisorID` references the same table, modelling reporting lines.
+- **Deferred foreign keys:** `Org.Branch.ManagerID` and `TransOperation.Transaction.BeneficiaryID` are added after their target tables exist, resolving the circular dependency between branches, employees and beneficiaries.
+- **Domain integrity:** `CHECK` constraints restrict the permitted values for account types, KYC status, transaction types, card schemes and similar fields. Sensitive card data (CVV, PIN) is stored only as a hash placeholder, never in plain text.
+- **Audit trail:** `Audit.AuditLog` records inserts, updates and deletes alongside the old and new values.
 
 ## Sample data
 
@@ -58,7 +58,7 @@ The script closes with analytical and integrity queries:
 
 ## Running the script
 
-Requirements: Microsoft SQL Server (Express edition is sufficient) and a client such as SQL Server Management Studio or Azure Data Studio.
+Requirements: Microsoft SQL Server and a client such as SQL Server Management Studio or Azure Data Studio.
 
 1. Open `korebank.sql`.
 2. Execute the whole script. It creates the database, schemas, tables, constraints, sample data and queries in order.
