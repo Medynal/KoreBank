@@ -67,14 +67,14 @@ Requirements: Microsoft SQL Server and a client such as SQL Server Management St
 The script builds the `KoreBank` database from scratch, so drop any existing copy before rerunning.
 
 ## Repository structure
-
+```
 korebank-sql-database/
 ├── README.md
 ├── korebank.sql            full schema, sample data and queries
 ├── erd/
 │   └── ERD KORE BANK-Page-2.drawio    entity relationship diagram
 └── data-dictionary.md      documentation of every table and its fields
-
+```
 ## Built with
 
 Microsoft SQL Server, T-SQL
